@@ -1,0 +1,14 @@
+# Ignore Python cache files
+__pycache__/
+*.pyc
+*.pyo
+./app/__pycache__
+./models/__pycache__
+
+
+# Ignore the virtual environment
+.venv/
+
+# Ignore Git files
+.git
+.gitignore
