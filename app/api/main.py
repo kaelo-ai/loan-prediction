@@ -9,9 +9,15 @@ import os
 import json
 from datetime import datetime
 from app.models.bank_loan import model
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Get the directory of the current file
 current_dir = os.path.dirname(os.path.abspath(__file__))
+logger.info(f"Current directory: {current_dir}")
 
 # Construct the path to the preprocessor file
 preprocessor_path = os.path.join(current_dir, '..', 'models', 'artifacts', 'preprocessor.pkl')
@@ -79,9 +85,12 @@ def log_unexpected_value(field: str, value: str):
         "field": field,
         "unexpected_value": value
     }
-    log_path = os.path.join(current_dir, 'datadrift', 'drift.jsonl')
+    datadrift_dir = os.path.join(current_dir, 'datadrift')
+    os.makedirs(datadrift_dir, exist_ok=True)
+    log_path = os.path.join(datadrift_dir, 'drift.jsonl')
     with open(log_path, "a") as f:
         f.write(json.dumps(log_entry) + "\n")
+    logger.info(f"Logged unexpected value: {field}={value}")
 
 def process_input(input_data: InputData):
     input_dict = input_data.dict()
@@ -110,7 +119,13 @@ def process_input(input_data: InputData):
 def store_predictions(inputs, predictions):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"predictions_{timestamp}.json"
-    filepath = os.path.join(current_dir, 'scores', filename)
+    scores_dir = os.path.join(current_dir, 'scores')
+    
+    # Create the scores directory if it doesn't exist
+    os.makedirs(scores_dir, exist_ok=True)
+    
+    filepath = os.path.join(scores_dir, filename)
+    logger.info(f"Attempting to store predictions in: {filepath}")
     
     result = []
     for input_data, pred in zip(inputs, predictions):
@@ -122,6 +137,8 @@ def store_predictions(inputs, predictions):
     
     with open(filepath, 'w') as f:
         json.dump(result, f, indent=2)
+    
+    logger.info(f"Successfully stored predictions in: {filepath}")
 
 @app.get("/", include_in_schema=False)
 async def root():
@@ -271,9 +288,11 @@ async def list_scores():
     List all available score files.
     """
     scores_dir = os.path.join(current_dir, 'scores')
+    os.makedirs(scores_dir, exist_ok=True)
     try:
         return sorted(os.listdir(scores_dir))
     except Exception as e:
+        logger.error(f"Error listing scores: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error listing scores: {str(e)}")
 
 @app.get("/scores/{filename}", response_model=List[Dict])
@@ -285,14 +304,17 @@ async def get_score(filename: str):
     file_path = os.path.join(scores_dir, filename)
     
     if not os.path.exists(file_path):
+        logger.warning(f"Score file not found: {filename}")
         raise HTTPException(status_code=404, detail=f"Score file {filename} not found")
     
     try:
         with open(file_path, 'r') as f:
             return json.load(f)
     except json.JSONDecodeError:
+        logger.error(f"Error decoding JSON from {filename}")
         raise HTTPException(status_code=500, detail=f"Error decoding JSON from {filename}")
     except Exception as e:
+        logger.error(f"Error reading score file: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error reading score file: {str(e)}")
 
 @app.get("/health")
