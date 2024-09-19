@@ -164,8 +164,7 @@ async def predict(
             "pdays": 346,
             "previous": 2,
             "poutcome": "success",
-            "deposit": "yes",
-            "loan": 0
+            "deposit": "yes"
         }
     )
 ):
@@ -212,8 +211,7 @@ async def predict_bulk(
                 "pdays": 346,
                 "previous": 2,
                 "poutcome": "success",
-                "deposit": "yes",
-                "loan": 0
+                "deposit": "yes"
             },
             {
                 "age": 39,
@@ -231,8 +229,7 @@ async def predict_bulk(
                 "pdays": -1,
                 "previous": 0,
                 "poutcome": "unknown",
-                "deposit": "no",
-                "loan": 0
+                "deposit": "no"
             },
             {
                 "age": 34,
@@ -250,8 +247,7 @@ async def predict_bulk(
                 "pdays": 170,
                 "previous": 2,
                 "poutcome": "failure",
-                "deposit": "no",
-                "loan": 0
+                "deposit": "no"
             }
         ]
     )
