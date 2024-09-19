@@ -1,5 +1,7 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, validator
+from fastapi import FastAPI, HTTPException, Body
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, validator, Field
+from typing import List, Dict
 import numpy as np
 import pandas as pd
 import pickle
@@ -36,6 +38,7 @@ class InputData(BaseModel):
     poutcome: str
     education: str
     month: str
+    loan: int = Field(0, description="Optional: Used for validation data, not used in prediction")
 
     @validator('deposit', 'housing', 'default')
     def validate_binary(cls, v):
@@ -67,18 +70,20 @@ class PredictionOutput(BaseModel):
     prediction: str
     probability: float
 
+class BulkPredictionOutput(BaseModel):
+    predictions: List[PredictionOutput]
+
 def log_unexpected_value(field: str, value: str):
     log_entry = {
         "timestamp": datetime.now().isoformat(),
         "field": field,
         "unexpected_value": value
     }
-    log_path = os.path.join(current_dir, 'datadrift/drift.jsonl')
+    log_path = os.path.join(current_dir, 'datadrift', 'drift.jsonl')
     with open(log_path, "a") as f:
         f.write(json.dumps(log_entry) + "\n")
 
-@app.post("/predict", response_model=PredictionOutput)
-async def predict(input_data: InputData):
+def process_input(input_data: InputData):
     input_dict = input_data.dict()
     
     # Handle potentially unexpected values
@@ -100,6 +105,55 @@ async def predict(input_data: InputData):
         log_unexpected_value('education', input_dict['education'])
         input_dict['education'] = 'unknown'  # or you might want to use a different default value
 
+    return input_dict
+
+def store_predictions(inputs, predictions):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"predictions_{timestamp}.json"
+    filepath = os.path.join(current_dir, 'scores', filename)
+    
+    result = []
+    for input_data, pred in zip(inputs, predictions):
+        result.append({
+            "input": input_data,
+            "prediction": pred.prediction,
+            "probability": pred.probability
+        })
+    
+    with open(filepath, 'w') as f:
+        json.dump(result, f, indent=2)
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/docs")
+
+@app.post("/predict", response_model=PredictionOutput)
+async def predict(
+    input_data: InputData = Body(
+        ...,
+        example={
+            "age": 31,
+            "job": "blue-collar",
+            "marital": "single",
+            "education": "secondary",
+            "default": "no",
+            "balance": 953,
+            "housing": "yes",
+            "contact": "cellular",
+            "day": 14,
+            "month": "may",
+            "duration": 479,
+            "campaign": 1,
+            "pdays": 346,
+            "previous": 2,
+            "poutcome": "success",
+            "deposit": "yes",
+            "loan": 0
+        }
+    )
+):
+    input_dict = process_input(input_data)
+
     # Convert input data to DataFrame
     input_df = pd.DataFrame([input_dict])
 
@@ -110,11 +164,141 @@ async def predict(input_data: InputData):
     prediction = model.predict(input_preprocessed)
     probability = model.predict_proba(input_preprocessed)[0][1]
 
-    return PredictionOutput(
+    result = PredictionOutput(
         prediction="Yes" if prediction[0] == 1 else "No",
         probability=float(probability)
     )
 
+    # Store prediction
+    store_predictions([input_data.dict()], [result])
+
+    return result
+
+@app.post("/predict_bulk", response_model=BulkPredictionOutput)
+async def predict_bulk(
+    bulk_input: List[InputData] = Body(
+        ...,
+        example=[
+            {
+                "age": 31,
+                "job": "blue-collar",
+                "marital": "single",
+                "education": "secondary",
+                "default": "no",
+                "balance": 953,
+                "housing": "yes",
+                "contact": "cellular",
+                "day": 14,
+                "month": "may",
+                "duration": 479,
+                "campaign": 1,
+                "pdays": 346,
+                "previous": 2,
+                "poutcome": "success",
+                "deposit": "yes",
+                "loan": 0
+            },
+            {
+                "age": 39,
+                "job": "management",
+                "marital": "married",
+                "education": "primary",
+                "default": "no",
+                "balance": 738,
+                "housing": "yes",
+                "contact": "cellular",
+                "day": 18,
+                "month": "jul",
+                "duration": 215,
+                "campaign": 3,
+                "pdays": -1,
+                "previous": 0,
+                "poutcome": "unknown",
+                "deposit": "no",
+                "loan": 0
+            },
+            {
+                "age": 34,
+                "job": "technician",
+                "marital": "divorced",
+                "education": "tertiary",
+                "default": "no",
+                "balance": 66,
+                "housing": "no",
+                "contact": "cellular",
+                "day": 5,
+                "month": "feb",
+                "duration": 102,
+                "campaign": 1,
+                "pdays": 170,
+                "previous": 2,
+                "poutcome": "failure",
+                "deposit": "no",
+                "loan": 0
+            }
+        ]
+    )
+):
+    processed_inputs = [process_input(input_data) for input_data in bulk_input]
+    
+    # Convert input data to DataFrame
+    input_df = pd.DataFrame(processed_inputs)
+
+    # Preprocess the input
+    input_preprocessed = preprocessor.transform(input_df)
+
+    # Make predictions
+    predictions = model.predict(input_preprocessed)
+    probabilities = model.predict_proba(input_preprocessed)[:, 1]
+
+    # Prepare output
+    results = [
+        PredictionOutput(
+            prediction="Yes" if pred == 1 else "No",
+            probability=float(prob)
+        )
+        for pred, prob in zip(predictions, probabilities)
+    ]
+
+    # Store predictions
+    store_predictions([input_data.dict() for input_data in bulk_input], results)
+
+    return BulkPredictionOutput(predictions=results)
+
+@app.get("/scores", response_model=List[str])
+async def list_scores():
+    """
+    List all available score files.
+    """
+    scores_dir = os.path.join(current_dir, 'scores')
+    try:
+        return sorted(os.listdir(scores_dir))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing scores: {str(e)}")
+
+@app.get("/scores/{filename}", response_model=List[Dict])
+async def get_score(filename: str):
+    """
+    Retrieve the content of a specific score file.
+    """
+    scores_dir = os.path.join(current_dir, 'scores')
+    file_path = os.path.join(scores_dir, filename)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"Score file {filename} not found")
+    
+    try:
+        with open(file_path, 'r') as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail=f"Error decoding JSON from {filename}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading score file: {str(e)}")
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
