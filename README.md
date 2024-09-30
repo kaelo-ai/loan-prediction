@@ -14,8 +14,8 @@ This project is a FastAPI-based API for predicting loan approvals. It uses a mac
 If the project is in a Git repository, clone it:
 
 ```bash
-git clone https://github.com/your-username/loan-prediction-api.git
-cd loan-prediction-api
+git clone https://github.com/your-username/loan-prediction-api.git](https://github.com/kaelo-ai/loan-prediction.git)
+cd loan-prediction
 ```
 
 ### 2. Build the Docker Image
@@ -23,21 +23,21 @@ cd loan-prediction-api
 From the root directory of the project (where the Dockerfile is located), run:
 
 ```bash
-docker build -t loan-prediction-api .
+docker build -t loan-prediction .
 ```
 
-This command builds a Docker image and tags it as `loan-prediction-api`.
+This command builds a Docker image and tags it as `loan-prediction`.
 
 ### 3. Run the Docker Container
 
 After the image is built, run the container:
 
 ```bash
-docker run -p 8000:8000 loan-prediction-api
+docker run -p 8000:8000 loan-prediction
 ```
 
 This command:
-- Starts a container from the `loan-prediction-api` image
+- Starts a container from the `loan-prediction` image
 - Maps port 8000 of the container to port 8000 on your host machine
 
 The API should now be running and accessible at `http://localhost:8000`.
